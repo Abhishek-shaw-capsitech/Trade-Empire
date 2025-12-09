@@ -22,7 +22,19 @@ public class ProfileManager : MonoBehaviour
     public void Initialize(string uid)
     {
         userId = uid;
-        dbRef = FirebaseDatabase.GetInstance(DB_URL).RootReference.Child("players").Child(uid);
+
+        if (dbRef != null)
+        {
+            dbRef.ValueChanged -= HandleProfileChanged;
+        }
+
+        dbRef = FirebaseDatabase.GetInstance(DB_URL)
+            .RootReference
+            .Child("players")
+            .Child(uid);
+
+        dbRef.ValueChanged += HandleProfileChanged;
+
         LoadProfile();
     }
 
@@ -33,7 +45,6 @@ public class ProfileManager : MonoBehaviour
         {
             currentPlayer = JsonUtility.FromJson<PlayerData>(snapshot.GetRawJsonValue());
         }
-       
         else
         {
             currentPlayer.username = "Default";
@@ -48,6 +59,35 @@ public class ProfileManager : MonoBehaviour
         RaiseInventoryChanged();
 
         Debug.Log("Profile loaded: " + currentPlayer.username + " has " + currentPlayer.coins + " coins");
+    }
+
+    private void HandleProfileChanged(object sender, ValueChangedEventArgs args)
+    {
+        if (args.DatabaseError != null)
+        {
+            Debug.LogError("Profile listener error: " + args.DatabaseError.Message);
+            return;
+        }
+
+        if (!args.Snapshot.Exists)
+        {
+            Debug.LogWarning("Profile snapshot missing for user: " + userId);
+            return;
+        }
+
+        currentPlayer = JsonUtility.FromJson<PlayerData>(args.Snapshot.GetRawJsonValue());
+
+        Debug.Log("Profile changed from Firebase. Coins=" + currentPlayer.coins + ", trades=" + currentPlayer.tradeCount);
+
+        RaiseInventoryChanged();
+    }
+
+    private void OnDestroy()
+    {
+        if (dbRef != null)
+        {
+            dbRef.ValueChanged -= HandleProfileChanged;
+        }
     }
 
     public async void SaveProfile()
@@ -105,7 +145,6 @@ public class ProfileManager : MonoBehaviour
         OnInventoryChanged?.Invoke();
     }
 
-   
     public void UnlockAchievement(string ach)
     {
         if (currentPlayer == null) return;
@@ -113,7 +152,7 @@ public class ProfileManager : MonoBehaviour
         if (currentPlayer.achievements == null)
             currentPlayer.achievements = new string[0];
 
-        if (System.Array.IndexOf(currentPlayer.achievements, ach) != -1)
+        if (Array.IndexOf(currentPlayer.achievements, ach) != -1)
             return;
 
         var list = new System.Collections.Generic.List<string>(currentPlayer.achievements);
@@ -123,5 +162,4 @@ public class ProfileManager : MonoBehaviour
         SaveProfile();
         Debug.Log("Unlocked achievement: " + ach);
     }
-
 }
